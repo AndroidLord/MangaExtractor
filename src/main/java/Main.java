@@ -19,6 +19,7 @@ public class Main {
 
     public static void main(String[] args) throws MalformedURLException {
 
+
         //String url = "https://ww6.mangakakalot.tv/chapter/manga-ov991456/chapter-28";
        //String url = "https://ww6.mangakakalot.tv/chapter/manga-sc995637/chapter-30";
        String url = "https://ww6.mangakakalot.tv/chapter/manga-sc995637/chapter-30";
