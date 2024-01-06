@@ -19,28 +19,21 @@ public class Main {
 
     public static void main(String[] args) throws MalformedURLException {
 
-        String url = "https://ww6.mangakakalot.tv/chapter/manga-sc995637/chapter-42.5";
+        //String url = "https://ww6.mangakakalot.tv/chapter/manga-ov991456/chapter-28";
+       //String url = "https://ww6.mangakakalot.tv/chapter/manga-sc995637/chapter-30";
+       String url = "https://ww6.mangakakalot.tv/chapter/manga-sc995637/chapter-30";
         //String url = "https://ww6.mangakakalot.tv/chapter/manga-sx995980/chapter-46";
+        // String url = "https://asuracomics.com/4533579728-f-class-destiny-hunter-chapter-39/";
 
+       //String url = "https://kunmanga.com/manga/revenge-of-the-iron-blooded-sword-hound/chapter-21/";
 
-        baseUrl = new URL(url).getHost();
+        SwingUtilities.invokeLater(() -> {
+            // Create and display the MangaViewer window
+            MangaViewer mangaViewer = new MangaViewer(new ArrayList<>());
+            mangaViewer.setVisible(true);
 
-        String htmlContent = WebScrapping.scrapeHtml(url);
-
-        List<String> imageUrls = WebScrapping.extractImageUrls(htmlContent);
-
-        chapter.setCurrentChapter(url);
-        WebScrapping.extractChapterLinks(htmlContent);
-
-        System.out.println("ImageUrl Count: " + imageUrls.size());
-
-        List<BufferedImage> imageList = ImageHub.getImages(imageUrls);
-
-        // SwingUtilities.invokeLater(()->{
-
-        new MangaViewer(imageList).setVisible(true);
-
-        // });
+            mangaViewer.fetchChapterInBackground(url);
+        });
     }
 
 

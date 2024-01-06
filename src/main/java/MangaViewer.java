@@ -1,8 +1,7 @@
-
 import ImageExtraction.ImageHub;
 import Util.ChapterManager;
 import Util.HelperMethod;
-import org.jsoup.Jsoup;
+import Util.WebsiteChecker;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -14,11 +13,10 @@ import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.ArrayList;
+import java.util.*;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 public class MangaViewer extends JFrame {
     private List<BufferedImage> mangaPages;
@@ -37,13 +35,20 @@ public class MangaViewer extends JFrame {
     private boolean isBlackBackground = false;
     private boolean areTopBarButtonsVisible = true;
 
+    private GraphicsDevice gd; // Store the GraphicsDevice
+    private boolean isFullScreen = false; // Track full-screen mode
+
+    private JPanel loadingPanel; // Add a loading panel member
+
     // Adjust the thread pool size as needed
     private ExecutorService executorService = Executors.newFixedThreadPool(2);
 
     private static ChapterManager chapterManager = ChapterManager.getInstance();
 
-    public MangaViewer(List<BufferedImage> mangaPages) {
+    // Keep track of the last viewed page index for each chapter
+    private Map<String, Integer> lastViewedPages = new HashMap<>();
 
+    public MangaViewer(List<BufferedImage> mangaPages) {
         this.mangaPages = mangaPages;
 
         setTitle("Manga Viewer");
@@ -60,9 +65,8 @@ public class MangaViewer extends JFrame {
         downloadButton = new JButton("Download All");
         chapterLinkField = new JTextField(20);
         fetchChapterButton = new JButton("Fetch Chapter");
-        //topBarButtonPanel = new JPanel();
-        toggleTopBarButton = new JButton("Toggle Top Buttons");
-
+        toggleTopBarButton = new JButton(" Hide Menu ");
+        toggleTopBarButton.setBorder(null);
 
         controlPanel.add(previousChapterButton);
         controlPanel.add(toggleBackgroundColorButton);
@@ -75,7 +79,16 @@ public class MangaViewer extends JFrame {
         toggleTopBarButton.setOpaque(false);
         toggleTopBarButton.setContentAreaFilled(false);
         toggleTopBarButton.setBorderPainted(false);
-        add(toggleTopBarButton,BorderLayout.EAST);
+        add(toggleTopBarButton, BorderLayout.EAST);
+
+        // Create the loading panel and set it as visible initially
+        loadingPanel = createLoadingPanel();
+        add(loadingPanel, BorderLayout.CENTER);
+        loadingPanel.setVisible(true);
+
+        // Load the last viewed page index for the current chapter
+        currentPageIndex = getLastViewedPage(chapterManager.getCurrentChapter());
+        showPage(currentPageIndex);
 
         addComponentListener(new ComponentAdapter() {
             @Override
@@ -84,11 +97,9 @@ public class MangaViewer extends JFrame {
 
                 if (getExtendedState() == JFrame.MAXIMIZED_BOTH) {
                     toggleTopBarButton.setVisible(true);
-
                 } else {
                     toggleTopBarButton.setVisible(false);
                 }
-
             }
         });
 
@@ -105,48 +116,39 @@ public class MangaViewer extends JFrame {
         }
 
         scrollPane = new JScrollPane(mangaPagesPanel);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(30);
-        scrollPane.getVerticalScrollBar().setBlockIncrement(100);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(50);
+        scrollPane.getVerticalScrollBar().setBlockIncrement(40);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         scrollPane.getVerticalScrollBar().setUI(new CustomScrollBarUI());
         add(scrollPane, BorderLayout.CENTER);
+        scrollPane.getVerticalScrollBar().setBackground(Color.BLACK); // Set the background color to match your background
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
 
         showPage(currentPageIndex);
 
         nextChapterButton.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
-
-
                 System.out.println("Clicked Next chapter");
-
                 String url = null;
                 try {
                     url = HelperMethod.checkUrl(chapterManager.getNextChapter());
                 } catch (MalformedURLException ex) {
                     ex.printStackTrace();
                 }
-
                 fetchChapterInBackground(url);
-
-
             }
         });
 
         previousChapterButton.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
-
-                System.out.println("Clicked Prev chapter");
-
-
+                System.out.println("\nClicked Prev chapter");
                 String url = null;
                 try {
                     url = HelperMethod.checkUrl(chapterManager.getPrevChapter());
                 } catch (MalformedURLException ex) {
                     ex.printStackTrace();
                 }
-
                 fetchChapterInBackground(url);
-
             }
         });
 
@@ -164,6 +166,7 @@ public class MangaViewer extends JFrame {
 
         fetchChapterButton.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
+                loadingPanel.setVisible(true);
                 String url = chapterLinkField.getText();
                 fetchChapterInBackground(url);
             }
@@ -174,77 +177,191 @@ public class MangaViewer extends JFrame {
                 toggleTopBarButtonsVisibility();
             }
         });
+
+        // Add key listener for arrow key navigation
+        // Add a KeyListener to the MangaViewer frame
+        addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                int keyCode = e.getKeyCode();
+
+                // Toggle the top bar when Shift key is pressed
+                if (e.isShiftDown() && keyCode == KeyEvent.VK_SHIFT) {
+                    toggleTopBarButtonsVisibility();
+                }
+
+                // Perform the same action as toggleBackgroundColorButton when "b" key is pressed
+                if (keyCode == KeyEvent.VK_B) {
+                    toggleBackgroundColor();
+                }
+
+                // Handle navigation using left and right arrow keys
+                if (keyCode == KeyEvent.VK_LEFT) {
+                    // Navigate to the previous chapter
+                    String url = null;
+                    try {
+                        url = HelperMethod.checkUrl(chapterManager.getPrevChapter());
+                    } catch (MalformedURLException ex) {
+                        ex.printStackTrace();
+                    }
+                    fetchChapterInBackground(url);
+                } else if (keyCode == KeyEvent.VK_RIGHT) {
+                    // Navigate to the next chapter
+                    String url = null;
+                    try {
+                        url = HelperMethod.checkUrl(chapterManager.getNextChapter());
+                    } catch (MalformedURLException ex) {
+                        ex.printStackTrace();
+                    }
+                    fetchChapterInBackground(url);
+                }
+            }
+        });
+
+
+
+        // Get the default screen device
+        GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        gd = ge.getDefaultScreenDevice();
+
+        if (gd.isFullScreenSupported()) {
+            // Set up a key binding to exit full-screen mode with the Escape key
+            KeyStroke escapeKeyStroke = KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0);
+            Action escapeAction = new AbstractAction() {
+                public void actionPerformed(ActionEvent e) {
+                    exitFullScreen();
+                }
+            };
+            getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(escapeKeyStroke, "ESCAPE");
+            getRootPane().getActionMap().put("ESCAPE", escapeAction);
+
+            // Set up a key listener to toggle full-screen mode with F11
+            addKeyListener(new KeyAdapter() {
+                @Override
+                public void keyPressed(KeyEvent e) {
+                    if (e.getKeyCode() == KeyEvent.VK_F11) {
+                        toggleFullScreen();
+                    }
+                }
+            });
+
+            setFocusable(true); // Ensure the JFrame receives keyboard input
+        } else {
+            System.err.println("Full-screen exclusive mode not supported.");
+        }
+
+        updateChapterButtons();
     }
 
-    private void fetchChapterInBackground(String url) {
+    private JPanel createLoadingPanel() {
+        // Create a JPanel to display your loading animation (e.g., a JLabel with a GIF)
+        JPanel panel = new JPanel();
+        ImageIcon loadingIcon = new ImageIcon("G:\\waiting2.gif"); // Replace with your GIF file path
+        JLabel loadingLabel = new JLabel(loadingIcon);
+        panel.add(loadingLabel);
+        return panel;
+    }
 
-        if(url==null || url.isEmpty())
+    public void toggleFullScreen() {
+        if (isFullScreen) {
+            exitFullScreen();
+        } else {
+            enterFullScreen();
+        }
+    }
+
+    public void enterFullScreen() {
+        if (gd.isFullScreenSupported()) {
+            gd.setFullScreenWindow(this);
+            isFullScreen = true;
+        }
+    }
+
+    public void exitFullScreen() {
+        gd.setFullScreenWindow(null);
+        isFullScreen = false;
+    }
+
+    public void fetchChapterInBackground(String url) {
+        if (url == null || url.isEmpty())
             return;
 
         executorService.submit(() -> {
-
             String htmlContent = WebScrapping.scrapeHtml(url);
+            List<String> imageUrls = null;
+            try {
+                String baseUrl = new URL(url).getHost();
+                imageUrls = WebScrapping.extractImageUrls(htmlContent, baseUrl);
 
-            List<String> imageUrls = WebScrapping.extractImageUrls(htmlContent);
-
-            chapterManager.setCurrentChapter(url);
-
-            WebScrapping.extractChapterLinks(htmlContent);
-
-            System.out.println("ImageUrl Count: " + imageUrls.size());
-
-            List<BufferedImage> imageList = ImageHub.getImages(imageUrls);
-            System.out.println("Data acquired");
-
-            SwingUtilities.invokeLater(() -> {
-                // Update the UI with the new pages
-                if (imageList.size() > 0) {
-                    // Add the new pages to the existing list
-                    mangaPages.addAll(imageList);
-
-                    // Clear the existing pages in the panel
-                    mangaPagesPanel.removeAll();
-
-                    // Re-add all pages (both old and new) to the panel
-                    for (BufferedImage page : mangaPages) {
-                        JLabel pageLabel = new JLabel();
-                        pageLabel.setIcon(new ImageIcon(page));
-                        pageLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-                        mangaPagesPanel.add(pageLabel);
-                    }
-
-                    // Update the current page index
-                    showPage(currentPageIndex);
-                    revalidate();
-                } else {
-                    System.err.println("No Chapter Available");
+                if (imageUrls == null || imageUrls.size() == 0) {
+                    System.err.println("Image Element Not Found, Inspect Website Checker and update the HTML Element");
                 }
-            });
+
+                chapterManager.setCurrentChapter(url);
+                WebScrapping.extractChapterLinks(htmlContent, baseUrl);
+
+                System.out.println("ImageUrl Count: " + imageUrls.size());
+
+                List<BufferedImage> imageList = ImageHub.getImages(imageUrls);
+                System.out.println("Data Size: "+imageList.size());
+
+                SwingUtilities.invokeLater(() -> {
+                    // Update the UI with the new pages
+                    if (imageList.size() > 0) {
+                        loadingPanel.setVisible(false);
+                        mangaPages.clear(); // Clear the existing pages
+                        mangaPages.addAll(imageList); // Add the new pages
+
+                        // Clear the existing pages in the panel
+                        mangaPagesPanel.removeAll();
+
+                        // Re-add all pages (new) to the panel
+                        for (BufferedImage page : mangaPages) {
+                            if (page == null) continue;
+                            JLabel pageLabel = new JLabel();
+                            pageLabel.setIcon(new ImageIcon(page));
+                            pageLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+                            mangaPagesPanel.add(pageLabel);
+                        }
+
+                        // Store the last viewed page for the current chapter (if needed)
+                        storeLastViewedPage(chapterManager.getCurrentChapter(), 0); // Start from the first page
+                        currentPageIndex = 0; // Start from the first page
+                        showPage(currentPageIndex);
+                        revalidate();
+                    } else {
+                        System.err.println("No Chapter Available");
+                    }
+                });
+
+            } catch (MalformedURLException e) {
+                e.printStackTrace();
+            }
+
         });
     }
 
-    private void handleFetchedChapter(List<BufferedImage> newMangaPages) {
-        if (newMangaPages.size() > 0) {
-            // Add the new pages to the existing list
-            mangaPages.addAll(newMangaPages);
+    private void updateChapterButtons() {
+        String prevChapter = chapterManager.getPrevChapter();
+        String nextChapter = chapterManager.getNextChapter();
 
-            // Clear the existing pages in the panel
-            mangaPagesPanel.removeAll();
+        boolean hasPrevChapter = prevChapter != null && !prevChapter.isEmpty();
+        boolean hasNextChapter = nextChapter != null && !nextChapter.isEmpty();
 
-            // Re-add all pages (both old and new) to the panel
-            for (BufferedImage page : mangaPages) {
-                JLabel pageLabel = new JLabel();
-                pageLabel.setIcon(new ImageIcon(page));
-                pageLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-                mangaPagesPanel.add(pageLabel);
-            }
-
-            showPage(currentPageIndex);
-            revalidate();
-        } else {
-            System.err.println("No Chapter Available");
-        }
+        previousChapterButton.setEnabled(!hasPrevChapter);
+        nextChapterButton.setEnabled(!hasNextChapter);
     }
+
+    private int getLastViewedPage(String chapterUrl) {
+        // Get the last viewed page index for the given chapter URL
+        return lastViewedPages.getOrDefault(chapterUrl, 0);
+    }
+
+    private void storeLastViewedPage(String chapterUrl, int pageIndex) {
+        // Store the last viewed page index for the given chapter URL
+        lastViewedPages.put(chapterUrl, pageIndex);
+    }
+
     private void showPage(int pageIndex) {
         if (pageIndex >= 0 && pageIndex < mangaPages.size()) {
             currentPageIndex = pageIndex;
@@ -267,20 +384,15 @@ public class MangaViewer extends JFrame {
             mangaPagesPanel.setBackground(null);
             toggleTopBarButton.setBackground(null);
 
-
             toggleTopBarButton.setBorderPainted(false);
             toggleTopBarButton.setOpaque(false);
             toggleTopBarButton.setContentAreaFilled(false);
-
         } else {
             toggleTopBarButton.setBackground(Color.BLACK);
             controlPanel.setBackground(Color.BLACK);
             mangaPagesPanel.setBackground(Color.BLACK);
 
-
-            toggleTopBarButton.setBorderPainted(true);
             toggleTopBarButton.setOpaque(true);
-            toggleTopBarButton.setContentAreaFilled(true);
         }
         isBlackBackground = !isBlackBackground;
     }
@@ -288,56 +400,27 @@ public class MangaViewer extends JFrame {
     private void downloadAllImages() {
         // Specify the directory where images will be downloaded
         String downloadDir = "downloaded_images";
-
-        downloadImages(mangaPages,downloadDir);
-
+        downloadImages(mangaPages, downloadDir);
     }
 
     private void toggleTopBarButtonsVisibility() {
         if (areTopBarButtonsVisible) {
             controlPanel.setVisible(false);
-//            topBarButtonPanel.add(controlPanel, BorderLayout.CENTER);
+            toggleTopBarButton.setText("  Show Menu  ");
         } else {
             controlPanel.setVisible(true);
-            //          topBarButtonPanel.remove(controlPanel);
-            //        topBarButtonPanel.revalidate();
+            toggleTopBarButton.setText("  Hide Menu  ");
         }
         areTopBarButtonsVisible = !areTopBarButtonsVisible;
     }
 
-//    public static void main(String[] args) {
-//
-//        String url = "https://ww6.mangakakalot.tv/chapter/manga-sc995637/chapter-42.5";
-//
-//        SwingUtilities.invokeLater(() -> {
-//            // Load manga pages (you need to implement this part)
-//
-//            List<BufferedImage> mangaPages = WebScrapping.scrapeWebsite(url);
-//
-//            if (mangaPages ==null || mangaPages.size() == 0) {
-//                System.err.println("No Chapter Available");
-//                mangaPages = new ArrayList<>();
-//            }
-//
-//            MangaViewer mangaViewer = new MangaViewer(mangaPages);
-//            mangaViewer.setVisible(true);
-//
-//
-//        });
-//
-//    }
-
-
-
     public static void downloadImages(List<BufferedImage> images, String outputDirectory) {
-
         File dir = new File(outputDirectory);
 
-        if(!dir.exists())
+        if (!dir.exists())
             dir.mkdirs();
 
-        if(dir.exists()){
-
+        if (dir.exists()) {
             for (int i = 0; i < images.size(); i++) {
                 BufferedImage image = images.get(i);
                 String fileName = "image_" + i + ".png"; // Change the file naming logic if needed
@@ -346,48 +429,21 @@ public class MangaViewer extends JFrame {
                     File outputFile = new File(outputDirectory, fileName);
                     ImageIO.write(image, "png", outputFile);
                     System.out.println("Downloaded: " + fileName);
-
                 } catch (IOException e) {
                     e.printStackTrace();
                     System.err.println("Failed to download: " + fileName);
                 }
-
             }
-
             System.out.println("Download Location: " + dir.getAbsolutePath());
         }
-
     }
+
     public class CustomScrollBarUI extends BasicScrollBarUI {
         @Override
         protected void configureScrollBarColors() {
             super.configureScrollBarColors();
-
-            // Set the thumb color to transparent
-          // this.thumbColor = new Color(0, 0, 0, 0);
-           this.thumbColor = new Color(0, 0, 0, 0);
-
-            // Set the track color to transparent
-            //this.trackColor = new Color(0, 0, 0, 0);
+            this.thumbColor = null;
+            this.trackColor = null;
         }
-
     }
-
-//    public static String checkUrl(String url) {
-//
-//        String baseUrl = WebScrapping.chapterLink.baseUrl;
-//
-//        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-//
-//            if(url.startsWith(baseUrl))
-//            return "http://" + url;
-//
-//            else
-//                return baseUrl+url;
-//
-//        } else {
-//            return url;
-//        }
-//    }
-
 }

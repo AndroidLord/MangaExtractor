@@ -7,6 +7,9 @@ import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
 import javax.imageio.ImageIO;
 
 import jdk.jshell.execution.Util;
@@ -15,26 +18,13 @@ import org.openqa.selenium.chrome.ChromeOptions;
 
 public class ImageLoader1 {
 
-    BufferedImage bufferedImage = null;
 
-    public ImageLoader1(String url) {
-    initializeWebDriver();
-
-    loadImage(url);
-    }
-
-    public static void initializeWebDriver() {
-        String path = "C:\\Users\\shubh\\Downloads\\chromedriver-win64\\chromedriver-win64\\chromedriver.exe";
-
-        System.setProperty("webdriver.chrome.driver", path);
-        ChromeOptions options = new ChromeOptions();
-        options.setHeadless(true);
-        options.addArguments("user-agent=Mozilla/5.0");
-        new ChromeDriver(options);
-    }
-
+    // download Images
     public static BufferedImage loadImage(String imageUrl) {
         try {
+
+            if(imageUrl==null || imageUrl.isEmpty())
+                System.err.println("\nImage is Null or Empty\n");
 
             URL url = new URL(imageUrl);
             BufferedImage bufferedImage = ImageIO.read(url);
